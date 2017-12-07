@@ -36,7 +36,11 @@ wss.on('connection', function(ws) {
 	function sendUpdate(obj) {
 		var game = currentGame
 		if (game) {
-			updates[game.id].push(obj)
+			var u = updates[game.id]
+			if (!(u instanceof Array)) {
+				u = updates[game.id] = []
+			}
+			u.push(obj)
 			var players = game.players
 			for (var i = players.length; i--;) {
 				players[i].listener();
