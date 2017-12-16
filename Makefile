@@ -1,7 +1,7 @@
 HTDOCS_DIR = htdocs
-HTDOCS_HOST = hhsw.de@ssh.strato.de:sites/proto/ld40
+HTDOCS_HOST = hhsw.de@ssh.strato.de:sites/rogues/
 SERVER_DIR = server
-SERVER_HOST = m9h@menkent.uberspace.de:ld40/
+SERVER_HOST = m9h@menkent.uberspace.de:rogues/
 ATLAS = $(HTDOCS_DIR)/atlas.png
 SPRITES = sprites/*
 OPTIONS = \

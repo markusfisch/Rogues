@@ -3,7 +3,7 @@
 var MAX_PLAYERS_PER_GAME = 4,
 	ACTION_POINTS = 4,
 	WebSocketServer = require('ws').Server,
-	wss = new WebSocketServer({port: 61853}),
+	wss = new WebSocketServer({port: 64220}),
 	games = [],
 	updates = [],
 	playerSerial = 0
