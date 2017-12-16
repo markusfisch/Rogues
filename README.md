@@ -1,5 +1,6 @@
-Rogues
-======
+# Rogues
+
+<img src="https://raw.githubusercontent.com/markusfisch/Rogues/gh-pages/screenshot.jpg" alt="screenshot"/>
 
 A multiplayer game for [Ludum Dare](http://ldjam.com) #40
 "The more you have, the worse it is".
