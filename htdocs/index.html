@@ -112,7 +112,8 @@ input {
 </div></div>
 <div id="StatusOverlay"><div class="Margin">
 	Gold:&nbsp;<span id="Gold">0</span>&nbsp;&bull;
-	Moves:&nbsp;<span id="Moves">0</span>
+	Moves:&nbsp;<span id="Moves">4</span>&nbsp;&bull;
+	Round:&nbsp;<span id="Round">1</span>
 	<span id="Message"></span>
 </div></div>
 <div id="ResultOverlay"></div>
@@ -193,6 +194,7 @@ var M = Math,
 	myIdView,
 	goldView,
 	movesView,
+	roundView,
 	messageView,
 	sprites = [],
 	gl,
@@ -259,14 +261,6 @@ function drawMoveOptions(col, row, playerActions) {
 	}
 }
 
-function getCurrentActions(player) {
-	if (player.actions < 1) {
-		return 0
-	}
-	var handicap = player.maxActions * player.gold / 100
-	return M.round(M.max(1, player.actions - handicap))
-}
-
 function getPlayerSprite(player) {
 	if (player.moveUntil > 0) {
 		return ROGUE_WALK
@@ -315,7 +309,7 @@ function drawMap() {
 		if (player.id === playerAtTurn) {
 			markTurnCol = player.x
 			markTurnRow = player.y
-			markTurnActions = getCurrentActions(player)
+			markTurnActions = player.actions
 		}
 		if (player.id === myId) {
 			markYouX = x
@@ -397,28 +391,6 @@ function initFrame() {
 	gl.uniform1i(textureLoc, 0)
 }
 
-function getPlayerById(playerId) {
-	var players = game.players
-	for (var i = players.length; i--;) {
-		var player = players[i]
-		if (player.id === playerId) {
-			return player
-		}
-	}
-	return null
-}
-
-function getPlayerAt(x, y) {
-	var players = game.players
-	for (var i = players.length; i--;) {
-		var player = players[i]
-		if (player.x === x && player.y === y) {
-			return player
-		}
-	}
-	return null
-}
-
 function run() {
 	requestAnimationFrame(run)
 
@@ -436,6 +408,28 @@ function setMessage(text) {
 
 function send(obj) {
 	ws.send(JSON.stringify(obj))
+}
+
+function getPlayerAt(x, y) {
+	var players = game.players
+	for (var i = players.length; i--;) {
+		var player = players[i]
+		if (player.x === x && player.y === y) {
+			return player
+		}
+	}
+	return null
+}
+
+function getPlayerById(playerId) {
+	var players = game.players
+	for (var i = players.length; i--;) {
+		var player = players[i]
+		if (player.id === playerId) {
+			return player
+		}
+	}
+	return null
 }
 
 function processClick() {
@@ -461,7 +455,7 @@ function processClick() {
 		}
 		return
 	}
-	var actions = getCurrentActions(me),
+	var actions = me.actions,
 		enemy = getPlayerAt(col, row)
 	// try and steal from a nearby player
 	if (enemy && actions > 0 &&
@@ -718,25 +712,9 @@ function initGame() {
 	initGolds()
 }
 
-function startGame() {
+function runGame() {
 	W.onresize = resize
 	resize()
-
-	D.onkeydown = keyDown
-	D.onkeyup = keyUp
-
-	D.onmousedown = pointerDown
-	D.onmousemove = pointerMove
-	D.onmouseup = pointerUp
-	D.onmouseout = pointerUp
-
-	if ('ontouchstart' in D) {
-		D.ontouchstart = pointerDown
-		D.ontouchmove = pointerMove
-		D.ontouchend = pointerUp
-		D.ontouchleave = pointerUp
-		D.ontouchcancel = pointerUp
-	}
 
 	last = Date.now() - 16
 	run()
@@ -773,8 +751,9 @@ function moveGold(fromX, fromY, toX, toY) {
 
 function updateStatus(player) {
 	if (player.id === myId) {
-		movesView.innerText = M.max(0, player.actions)
 		goldView.innerText = M.max(0, player.gold)
+		movesView.innerText = M.max(0, player.actions)
+		roundView.innerText = M.max(0, game.round)
 	}
 }
 
@@ -799,7 +778,7 @@ function movePlayer(move) {
 	if (!player) {
 		return
 	}
-	player.actions -= move.cost
+	player.actions = move.actions
 	player.gold += move.gold
 	if (move.gold > 0) {
 		moveGold(move.x, move.y, player.x, player.y)
@@ -817,7 +796,7 @@ function stealPlayer(steal) {
 	if (!attacker || !victim) {
 		return
 	}
-	attacker.actions -= steal.cost
+	attacker.actions = steal.actions
 	var goldMoved = steal.goldMoved
 	if (goldMoved > 0) {
 		attacker.gold += goldMoved
@@ -835,6 +814,7 @@ function highlightPlayer(turn) {
 	var next = turn.next,
 		player = getPlayerById(next)
 	game.turn = next
+	game.round = turn.round
 	if (player) {
 		player.actions = turn.actions
 		updateStatus(player)
@@ -867,7 +847,7 @@ function serverMessage(event) {
 		myId = json.playerId
 		myIdView.innerText = myId
 		if (game.id === myId) {
-			startGame()
+			runGame()
 		} else {
 			hideConnectionOverlay()
 		}
@@ -906,17 +886,48 @@ function connected() {
 	send({cmd:'create'})
 }
 
+function wireInputs() {
+	D.onkeydown = keyDown
+	D.onkeyup = keyUp
+
+	D.onmousedown = pointerDown
+	D.onmousemove = pointerMove
+	D.onmouseup = pointerUp
+	D.onmouseout = pointerUp
+
+	if ('ontouchstart' in D) {
+		D.ontouchstart = pointerDown
+		D.ontouchmove = pointerMove
+		D.ontouchend = pointerUp
+		D.ontouchleave = pointerUp
+		D.ontouchcancel = pointerUp
+	}
+}
+
+function joinGame(gameId) {
+	send({cmd: 'join', gameId: gameId})
+}
+
 function initOverlays() {
 	connectionOverlay = D.getElementById('ConnectionOverlay')
 	myIdView = D.getElementById('MyId')
 
-	D.getElementById('Join').onclick = function() {
-		var gameId = D.getElementById('GameToJoin').value
-		send({cmd: 'join', gameId: gameId})
+	var gameIdElement = D.getElementById('GameToJoin')
+	gameIdElement.onkeyup = function(event) {
+		event.preventDefault()
+		if (event.keyCode === 13) {
+			joinGame(gameIdElement.value)
+		}
+		return false
+	}
+	D.getElementById('Join').onclick = function(event) {
+		event.preventDefault()
+		joinGame(gameIdElement.value)
 		return false
 	}
 
-	D.getElementById('PlaySolo').onclick = function() {
+	D.getElementById('PlaySolo').onclick = function(event) {
+		event.preventDefault()
 		hideConnectionOverlay()
 		return false
 	}
@@ -924,13 +935,15 @@ function initOverlays() {
 	statusOverlay = D.getElementById('StatusOverlay')
 	goldView = D.getElementById('Gold')
 	movesView = D.getElementById('Moves')
+	roundView = D.getElementById('Round')
 	messageView = D.getElementById('Message')
 
 	resultOverlay = D.getElementById('ResultOverlay')
 
-	var introOverlay = D.getElementById('IntroOverlay')
-	D.getElementById('StartGame').onclick = function() {
-		introOverlay.style.display = 'none'
+	D.getElementById('StartGame').onclick = function(event) {
+		event.preventDefault()
+		D.getElementById('IntroOverlay').style.display = 'none'
+		wireInputs()
 		return false
 	}
 }

@@ -1,7 +1,6 @@
 'use strict'
 
-var MAX_PLAYERS_PER_GAME = 4,
-	ACTION_POINTS = 4,
+var ACTION_POINTS = 4,
 	WebSocketServer = require('ws').Server,
 	wss = new WebSocketServer({port: 64220}),
 	games = [],
@@ -36,11 +35,7 @@ wss.on('connection', function(ws) {
 	function sendAll(obj) {
 		var game = currentGame
 		if (game) {
-			var u = updates[game.id]
-			if (!(u instanceof Array)) {
-				u = updates[game.id] = []
-			}
-			u.push(obj)
+			updates[game.id].push(obj)
 			var players = game.players
 			for (var i = players.length; i--;) {
 				players[i].listener();
@@ -66,13 +61,25 @@ wss.on('connection', function(ws) {
 		return players[i % len]
 	}
 
-	function nextMoveOrPlayer(game, player, actionPoints) {
-		player.actions -= actionPoints
+	function calculateActions(actions, gold) {
+		if (actions < 1) {
+			return 0
+		}
+		var handicap = actions * gold / 100
+		return Math.round(Math.max(1, actions - handicap))
+	}
+
+	function nextMoveOrPlayer(game, player) {
 		if (player.actions < 1) {
 			var next = findNextPlayer(game)
-			next.actions = next.maxActions
+			next.actions = calculateActions(next.maxActions, next.gold)
 			game.turn = next.id
-			sendAll({turn: {next: next.id, actions: next.actions}})
+			++game.round
+			sendAll({turn: {
+				next: next.id,
+				actions: next.actions,
+				round: game.round
+			}})
 		}
 	}
 
@@ -84,7 +91,27 @@ wss.on('connection', function(ws) {
 		return game.map[getOffset(game, x, y)]
 	}
 
-	function getGold(game, x, y) {
+	function getTileBonus(tileId) {
+		switch (tileId) {
+		default:
+			return 1 // everything else
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+			return 3 // wood
+		case 5:
+		case 6:
+		case 7:
+			return 2 // stone
+		}
+	}
+
+	function isGoldAt(game, x, y) {
+		return game.loot[getOffset(game, x, y)] > 0
+	}
+
+	function getGoldAt(game, x, y) {
 		var offset = getOffset(game, x, y),
 			gold = game.loot[offset]
 		if (gold > 0) {
@@ -118,14 +145,15 @@ wss.on('connection', function(ws) {
 	}
 
 	function insertPlayer(player, game) {
-		var width = game.width,
+		var players = game.players,
+			width = game.width,
 			height = game.height,
-			cx = width >> 1,
-			cy = height >> 1,
-			a = Math.PI * .5 * game.players.length,
-			r = Math.min(width, height) * .4,
-			x = Math.round(cx + Math.cos(a) * r),
-			y = Math.round(cy + Math.sin(a) * r)
+			x,
+			y
+		do {
+			x = Math.round(width * Math.random())
+			y = Math.round(height * Math.random())
+		} while (getPlayerByPosition(players, x, y) || isGoldAt(game, x, y))
 		player.x = x
 		player.y = y
 	}
@@ -179,8 +207,9 @@ wss.on('connection', function(ws) {
 			return
 		}
 		player.escaped = true
+		player.actions = 0
 		sendAll({escaped: {id: player.id}})
-		nextMoveOrPlayer(game, player, player.maxActions)
+		nextMoveOrPlayer(game, player)
 	}
 
 	function playerMove(json) {
@@ -200,28 +229,49 @@ wss.on('connection', function(ws) {
 			height = game.height,
 			players = game.players,
 			x = parseInt(json.x),
-			y = parseInt(json.y)
+			y = parseInt(json.y),
+			cost = Math.abs(x - player.x) + Math.abs(y - player.y)
 		if (x < 0 || x >= width || y < 0 || y >= height) {
 			sendError('Out of bounds')
 			return
-		} else if (getPlayerByPosition(players, x, y)) {
-			sendError('Position alread occupied')
+		} else if (cost < 1) {
+			// no move
 			return
 		}
-		var cost = Math.abs(x - player.x) + Math.abs(y - player.y),
-			gold = getGold(game, x, y)
+		var playerAtTarget = getPlayerByPosition(players, x, y)
+		if (playerAtTarget) {
+			var xd = x - player.x,
+				yd = y - player.y
+			if (Math.abs(xd) > Math.abs(yd)) {
+				x += xd > 0 ? -1 : 1
+			} else {
+				y += yd > 0 ? -1 : 1
+			}
+			cost = Math.abs(x - player.x) + Math.abs(y - player.y)
+		}
+		if (cost > player.actions) {
+			sendError('Not enough actions left')
+			return
+		}
+		player.actions -= cost
 		player.x = x
 		player.y = y
+		var gold = getGoldAt(game, x, y)
 		player.gold += gold
 		var move = {
 			id: player.id,
 			x: x,
 			y: y,
+			actions: player.actions,
 			cost: cost,
 			gold: gold,
 		}
 		sendAll({move: move})
-		nextMoveOrPlayer(game, player, cost)
+		if (!playerAtTarget || player.actions < 1) {
+			nextMoveOrPlayer(game, player)
+		} else {
+			playerSteal({x: playerAtTarget.x, y: playerAtTarget.y})
+		}
 	}
 
 	function playerSteal(json) {
@@ -250,12 +300,17 @@ wss.on('connection', function(ws) {
 			sendError('Victim not in range')
 			return
 		}
+		if (player.actions < 1) {
+			sendError('No actions left')
+			return
+		}
+		--player.actions
 		var tileId = getTile(game, victim.x, victim.y),
 			steal = {
 				attacker: player.id,
 				victim: victim.id,
 				goldMoved: 0,
-				cost: 1
+				actions: player.actions
 			},
 			handicap = .5 * victim.gold / 100
 		if (Math.random() < .5 / getTileBonus(tileId) + handicap) {
@@ -264,7 +319,7 @@ wss.on('connection', function(ws) {
 			victim.gold = 0
 		}
 		sendAll({steal: steal})
-		nextMoveOrPlayer(game, player, 1)
+		nextMoveOrPlayer(game, player)
 	}
 
 	function joinGame(json) {
@@ -278,34 +333,15 @@ wss.on('connection', function(ws) {
 			sendError('Game does not exist')
 			return
 		}
-		if (game.players.length >= MAX_PLAYERS_PER_GAME) {
-			sendError('Already full')
-			return
-		}
 		if (getPlayerFromGame(game)) {
 			sendError('You are already in this game')
 			return
 		}
 		currentGame = game
+		updates[game.id] = []
 		var newPlayer = addPlayerToGame(game)
 		sendJSON({game: currentGame, playerId: playerId})
 		sendAll({addPlayer: newPlayer})
-	}
-
-	function getTileBonus(tileId) {
-		switch (tileId) {
-		default:
-			return 1 // everything else
-		case 1:
-		case 2:
-		case 3:
-		case 4:
-			return 3 // wood
-		case 5:
-		case 6:
-		case 7:
-			return 2 // stone
-		}
 	}
 
 	function createGame() {
@@ -317,6 +353,7 @@ wss.on('connection', function(ws) {
 			id: playerId,
 			players: [],
 			turn: playerId,
+			round: 1,
 			width: 8,
 			height: 8,
 			map: [
