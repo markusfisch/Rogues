@@ -33,7 +33,7 @@ wss.on('connection', function(ws) {
 		sendJSON({error: message})
 	}
 
-	function sendUpdate(obj) {
+	function sendAll(obj) {
 		var game = currentGame
 		if (game) {
 			var u = updates[game.id]
@@ -72,7 +72,7 @@ wss.on('connection', function(ws) {
 			var next = findNextPlayer(game)
 			next.actions = next.maxActions
 			game.turn = next.id
-			sendUpdate({turn: {next: next.id, actions: next.actions}})
+			sendAll({turn: {next: next.id, actions: next.actions}})
 		}
 	}
 
@@ -89,7 +89,7 @@ wss.on('connection', function(ws) {
 			gold = game.loot[offset]
 		if (gold > 0) {
 			game.loot[offset] = 0
-			sendUpdate({loot: {x: x, y: y}})
+			sendAll({loot: {x: x, y: y}})
 		}
 		return gold
 	}
@@ -179,7 +179,7 @@ wss.on('connection', function(ws) {
 			return
 		}
 		player.escaped = true
-		sendUpdate({escaped: {id: player.id}})
+		sendAll({escaped: {id: player.id}})
 		nextMoveOrPlayer(game, player, player.maxActions)
 	}
 
@@ -220,7 +220,7 @@ wss.on('connection', function(ws) {
 			cost: cost,
 			gold: gold,
 		}
-		sendUpdate({move: move})
+		sendAll({move: move})
 		nextMoveOrPlayer(game, player, cost)
 	}
 
@@ -263,7 +263,7 @@ wss.on('connection', function(ws) {
 			player.gold += victim.gold
 			victim.gold = 0
 		}
-		sendUpdate({steal: steal})
+		sendAll({steal: steal})
 		nextMoveOrPlayer(game, player, 1)
 	}
 
@@ -289,7 +289,7 @@ wss.on('connection', function(ws) {
 		currentGame = game
 		var newPlayer = addPlayerToGame(game)
 		sendJSON({game: currentGame, playerId: playerId})
-		sendUpdate({addPlayer: newPlayer})
+		sendAll({addPlayer: newPlayer})
 	}
 
 	function getTileBonus(tileId) {
@@ -354,7 +354,7 @@ wss.on('connection', function(ws) {
 				games.splice(idx, 1)
 				updates.splice(idx, 1)
 			} else {
-				sendUpdate({remove: playerId})
+				sendAll({remove: playerId})
 			}
 		}
 		currentGame = null
