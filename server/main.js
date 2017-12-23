@@ -146,8 +146,8 @@ wss.on('connection', function(ws) {
 
 	function insertPlayer(player, game) {
 		var players = game.players,
-			width = game.width,
-			height = game.height,
+			width = game.width - 1,
+			height = game.height - 1,
 			x,
 			y
 		do {
