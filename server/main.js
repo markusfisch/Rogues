@@ -2,7 +2,7 @@
 
 var ACTION_POINTS = 4,
 	WebSocketServer = require('ws').Server,
-	wss = new WebSocketServer({port: 64220}),
+	wss = new WebSocketServer({port: 41603}),
 	games = [],
 	updates = [],
 	playerSerial = 0
